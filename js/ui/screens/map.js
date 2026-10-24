@@ -14,6 +14,8 @@ import { playTheme } from '../../audio/piano.js';
 let mv = null;
 let refs = null;
 let ui = { mode: 'idle', troop: null, selected: null, bubble: null };
+let hudOpen = false;
+let toolsOpen = false;
 
 const T = (s, id) => s.map.territories[id];
 const nation = (s, id) => s.nations.find((n) => n.id === id);
@@ -81,7 +83,7 @@ function legendSheet(app) {
     row(h('span', { class: 'tok-dash' }), 'Dashed outline', 'Where you can move, support or build right now.'),
     row(h('span', { class: 'tok-dash pick' }), 'Gold outline', 'A city you chose to build a new troop in (build phase).'),
     row(h('span', { class: 'tok-dash drop' }), 'Red outline', 'A troop you chose to disband (build phase).'),
-    row(emoji('label', 'l'), 'Names button', "Turns territory names (a1, b1, …) on or off. Capitals always show their country's name in its colour."),
+    row(emoji('hammer-and-wrench', 'l'), 'Map buttons', 'Bottom right. Tap it to show zoom, fit-the-map, this key and the draw button.'),
     row(emoji('white-flag', 'l'), 'Draw button', 'Offer (or agree to) a draw. The badge shows how many nations agree; the game ends drawn when everyone left agrees.')));
 }
 export function leave() { mv?.destroy(); mv = null; }
@@ -91,19 +93,7 @@ export function update(app) {
   const s = app.state;
   const me = app.me;
   const myOrders = s.orders[me.id]?.troops ?? {};
-  const opts = { highlights: new Set(), arrows: [], marks: new Map(), selected: ui.selected, labels: app.prefs.labels !== false };
-
-  if (app.prefs.tint === 'relations') {
-    const tags = s.tags[me.id] ?? {};
-    const myOwner = me.vassalOf ?? me.id;
-    opts.fill = (tid) => {
-      const owner = s.terr[tid].owner;
-      if (!owner) return null;
-      if (owner === myOwner) return '#ffd66b';
-      const tag = tags[owner];
-      return tag === 'friend' ? '#9ad88a' : tag === 'enemy' ? '#f19a8f' : '#d6cfc0';
-    };
-  }
+  const opts = { highlights: new Set(), arrows: [], marks: new Map(), selected: ui.selected, labels: true };
 
   if (app.results) {
     resultsOverlay(app, opts);
@@ -155,89 +145,115 @@ function renderHud(app) {
   const inTurn = G.playersInTurn(s).some((n) => n.id === me.id);
   const myTroops = s.troops.filter((t) => t.cmd === me.id);
   const myOrders = s.orders[me.id]?.troops ?? {};
-  const card = h('div', { class: 'hud-card grow' }, turnLine(s));
   refs.bar.replaceChildren();
 
   if (app.results) {
+    // The turn report stays a full card: it is only up until the player taps OK.
+    const card = h('div', { class: 'hud-card grow' }, turnLine(s));
     resultsCard(app, card);
-  } else if (ui.mode !== 'idle') {
-    card.append(h('div', { class: 'row' }, emoji(ui.mode === 'move' ? 'footprints' : 'handshake'),
-      h('b', { class: 'grow' }, ui.mode === 'move' ? 'Tap where this troop should move.' : 'Tap the territory to support into.')));
+    refs.hud.replaceChildren(card);
+    renderTools(app);
+    return;
+  }
+
+  // Everything else is one short line ("Orders 0/3"); tap it for the details.
+  let icon = 'scroll';
+  let head = `Turn ${s.turn}`;
+  const more = [];
+  const extra = [];
+  if (ui.mode !== 'idle') {
+    icon = ui.mode === 'move' ? 'footprints' : 'handshake';
+    head = ui.mode === 'move' ? 'Tap where to move' : 'Tap where to support';
     refs.bar.append(btn('Cancel', { color: 'gray', onclick: () => { ui.mode = 'idle'; update(app); } }));
   } else if (s.phase === 'orders') {
     const submittedCount = G.playersInTurn(s).filter((n) => s.orders[n.id]?.submitted).length;
     if (!inTurn) {
-      card.append(h('div', {}, me.out ? 'You are out of the game: your old capital was taken. You can keep watching.'
-        : me.vassalOf ? `Conquered by ${nation(s, me.vassalOf).name}. You have no troops left to command.` : 'Nothing to order this turn.'));
+      icon = 'eye';
+      head = 'Watching';
+      more.push(me.out ? 'You are out of the game: your old capital was taken. You can keep watching.'
+        : me.vassalOf ? `Conquered by ${nation(s, me.vassalOf).name}. You have no troops left to command.` : 'Nothing to order this turn.');
     } else {
-      const given = myTroops.filter((t) => myOrders[t.id]).length;
-      card.append(h('div', { class: 'row' }, emoji('scroll'), h('b', {}, `Orders: ${given}/${myTroops.length} troops`)),
-        h('div', { class: 'small muted' }, myTroops.length ? 'Tap one of your troops to give it an order. No order = hold.' : 'You have no troops.'));
+      head = `Orders ${myTroops.filter((t) => myOrders[t.id]).length}/${myTroops.length}`;
+      more.push(myTroops.length ? 'Tap one of your troops to give it an order. No order = hold.' : 'You have no troops.');
       const sub = s.orders[me.id]?.submitted;
       refs.bar.append(sub
         ? btn('Submitted — tap to edit', { color: 'lime', icon: 'check-mark-button', onclick: () => app.act('setSubmitted', false) })
         : btn('Submit orders', { color: 'green', icon: 'outbox-tray', onclick: () => submit(app) }));
     }
-    card.append(h('div', { class: 'small muted' }, `${submittedCount}/${G.playersInTurn(s).length} nations submitted`));
+    more.push(`${submittedCount}/${G.playersInTurn(s).length} nations submitted`);
   } else if (s.phase === 'duels') {
     const n = s.duels.filter(OPEN).length;
-    card.append(h('div', { class: 'row' }, emoji('person-fencing'), h('b', {}, `${n} duel${n === 1 ? '' : 's'} to settle`)),
-      h('div', { class: 'small muted' }, s.settings.rpsOnly
-        ? 'Tap a red ⚔ marker on the map to throw rock-paper-scissors.'
-        : 'Tap a red ⚔ marker on the map. Fight it in person and report the winner, or throw rock-paper-scissors.'));
+    icon = 'person-fencing';
+    head = `Duels ${n}`;
+    more.push(s.settings.rpsOnly
+      ? 'Tap a red ⚔ marker on the map to throw rock-paper-scissors.'
+      : 'Tap a red ⚔ marker on the map. Fight it in person and report the winner, or throw rock-paper-scissors.');
     const mine = s.duels.filter(OPEN).find((d) => [duelist(s, d, 'a'), duelist(s, d, 'b')].includes(me.id));
     refs.bar.append(btn(mine ? 'Your duel' : 'Next duel', { color: 'red', icon: 'crossed-swords', onclick: () => openDuel(app, (mine ?? s.duels.find(OPEN)).territory) }));
     if (app.isAdmin && s.duels.some((d) => OPEN(d) && ['a', 'b'].every((x) => nation(s, duelist(s, d, x))?.bot))) {
-      card.append(btn('Settle bot-vs-bot duels (admin)', { color: 'yellow', sm: true, icon: 'robot', onclick: () => app.act('settleAllBotDuels') }));
+      extra.push(btn('Settle bot duels', { color: 'yellow', sm: true, icon: 'robot', onclick: () => app.act('settleAllBotDuels') }));
     }
   } else if (s.phase === 'build') {
     const b = s.build?.[me.id];
     if (b && !b.done) {
       const cities = s.map.territories.filter((t) => t.isCity && s.terr[t.id].owner === me.id).length;
       const troops = s.troops.filter((t) => t.nation === me.id).length;
-      if (b.builds) card.append(h('div', { class: 'row' }, emoji('military-helmet'), h('b', {}, `Build ${b.chosen.length}/${b.builds}: tap a city with a dashed outline`)));
-      if (b.disbands) card.append(h('div', { class: 'row' }, emoji('wastebasket'), h('b', {}, `Disband ${b.disband.length}/${b.disbands}: tap your troops`)),
-        h('div', { class: 'small' }, `You have ${troops} troops but only ${cities} cit${cities === 1 ? 'y' : 'ies'} to supply them.`));
-      card.append(h('div', { class: 'small muted' }, 'Anything you leave unchosen is picked for you.'));
+      icon = b.disbands ? 'wastebasket' : 'military-helmet';
+      head = [b.builds ? `Build ${b.chosen.length}/${b.builds}` : null, b.disbands ? `Disband ${b.disband.length}/${b.disbands}` : null].filter(Boolean).join(' · ') || 'Build';
+      if (b.builds) more.push('Tap a city with a dashed outline to build a troop there.');
+      if (b.disbands) more.push(`Tap your troops to disband: you have ${troops} troops but only ${cities} cit${cities === 1 ? 'y' : 'ies'} to supply them.`);
+      more.push('Anything you leave unchosen is picked for you.');
       refs.bar.append(btn('Confirm', { color: 'green', icon: 'check-mark-button', onclick: () => app.act('submitBuild') }));
     } else {
-      card.append(h('div', {}, 'Build phase — waiting for other nations.'));
+      icon = 'hourglass-not-done';
+      head = 'Build: waiting';
+      more.push('Waiting for the other nations to choose their builds.');
       if (app.isAdmin) refs.bar.append(btn('Finish build phase (host)', { color: 'yellow', sm: true, onclick: () => app.act('forceFinishBuild') }));
     }
   } else if (s.phase === 'ended') {
-    const top = G.standings(s)[0];
     const r = s.result;
-    card.append(r?.kind === 'draw'
-      ? h('div', { class: 'row' }, emoji('handshake'), h('b', {}, 'Game drawn — every remaining nation agreed.'))
-      : h('div', { class: 'row' }, emoji('trophy'), h('b', {}, `Game over — ${nation(s, r?.nation)?.name ?? top?.nation.name} wins${r?.reason === 'admin' ? ' (game ended early)' : r?.reason === 'limit' ? ' — most cities at the turn limit' : ` with ${G.majorityTarget(s)}+ cities`}!`)));
+    const winner = nation(s, r?.nation) ?? G.standings(s)[0]?.nation;
+    icon = r?.kind === 'draw' ? 'handshake' : 'trophy';
+    head = r?.kind === 'draw' ? 'Draw' : `${winner?.name.replace(/^The /, '')} wins`;
+    more.push(r?.kind === 'draw' ? 'Game drawn — every remaining nation agreed.'
+      : `${winner?.name} wins${r?.reason === 'admin' ? ' (game ended early)' : r?.reason === 'limit' ? ' — most cities at the turn limit' : ` with ${G.majorityTarget(s)}+ cities`}!`);
     if (app.isAdmin) refs.bar.append(btn('Play again', { color: 'green', icon: 'world-map', onclick: () => restart(app, 'rematch') }));
     refs.bar.append(
       btn('Standings', { color: 'yellow', icon: 'trophy', sm: true, onclick: () => app.go('nations') }));
   }
-  if (app.results) refs.hud.replaceChildren(card);
-  else refs.hud.replaceChildren(leaderboard(app), card);
+  const toggle = () => { hudOpen = !hudOpen; renderHud(app); };
+  const card = h('div', { class: 'hud-card hud-turn' },
+    h('button', { class: 'hud-head', type: 'button', onclick: toggle, 'aria-expanded': String(hudOpen), title: 'Tap for details' },
+      emoji(icon, 's'), h('b', {}, head), h('span', { class: 'hud-caret' }, hudOpen ? '▾' : '▸')),
+    hudOpen ? h('div', { class: 'hud-more' }, turnLine(s), more.map((t) => h('div', { class: 'small' }, t))) : null,
+    ...extra);
+  refs.hud.replaceChildren(leaderboard(app), card);
+  renderTools(app);
+}
 
-  refs.tools.replaceChildren(...[
+/** Right-hand buttons, folded behind one toggle so they don't cover the map. */
+function renderTools(app) {
+  const s = app.state;
+  const draw = drawButton(app);
+  const items = [
     sqbtn('information', { title: 'What am I looking at?', onclick: () => legendSheet(app) }),
     sqbtn('plus', { title: 'Zoom in', onclick: () => mv.zoomBy(0.75) }),
     sqbtn('minus', { title: 'Zoom out', onclick: () => mv.zoomBy(1.33) }),
     sqbtn('world-map', { title: 'Fit map', onclick: () => mv.fitAll() }),
-    drawButton(app),
-    sqbtn('label', { title: 'Show territory names', on: app.prefs.labels !== false, onclick: () => {
-      app.setPrefs({ labels: app.prefs.labels === false });
-      toast(app.prefs.labels ? 'Territory names on' : 'Territory names off');
-      update(app);
-    } }),
-    sqbtn('handshake', { title: 'Tint by your friend/enemy tags', on: app.prefs.tint === 'relations', onclick: () => {
-      app.setPrefs({ tint: app.prefs.tint === 'relations' ? 'owner' : 'relations' });
-      toast(app.prefs.tint === 'relations' ? 'Showing your private friend / enemy tags' : 'Showing nation colours');
-      update(app);
-    } }),
+    draw,
     s.phase === 'orders' && app.isAdmin ? sqbtn('hourglass-not-done', { title: 'Resolve turn now (admin)', onclick: () => {
       ui = { mode: 'idle', troop: null, selected: null, bubble: null };
       app.act('resolveTurn');
     } }) : null,
-  ].filter(Boolean));
+  ].filter(Boolean);
+  const toggle = sqbtn(toolsOpen ? 'cross-mark' : 'hammer-and-wrench', {
+    title: toolsOpen ? 'Hide map buttons' : 'Map buttons', on: toolsOpen,
+    onclick: () => { toolsOpen = !toolsOpen; renderTools(app); },
+  });
+  // Folded away, the toggle carries the draw badge so a draw offer is still noticed.
+  const badge = draw?.querySelector('.sq-badge');
+  if (!toolsOpen && badge) toggle.append(badge.cloneNode(true));
+  refs.tools.replaceChildren(...(toolsOpen ? items : []), toggle);
 }
 
 // ---------- Turn results, shown on the map ----------
@@ -324,7 +340,7 @@ function drawButton(app) {
 /** Top-left: every nation ranked by cities held. Conquered nations listed last, greyed. Tap a row for that nation. */
 function leaderboard(app) {
   const s = app.state;
-  const open = app.prefs.lbOpen !== false;
+  const open = app.prefs.lbOpen === true; // starts folded: phones need the map space
   const crown = crownHolder(s);
   const short = (n) => n.name.replace(/^The /, '');
   const toggle = () => { app.setPrefs({ lbOpen: !open }); renderHud(app); };
@@ -336,7 +352,7 @@ function leaderboard(app) {
     n.id === crown ? emoji('crown', 's') : null,
     h('b', { class: 'lb-num' }, cities ?? '–'),
     h('span', { class: 'lb-num lb-troops' }, troops ?? '–'));
-  return h('div', { class: 'hud-card lb' },
+  return h('div', { class: `hud-card lb ${open ? 'open' : ''}` },
     h('button', { class: 'lb-head', type: 'button', onclick: toggle, 'aria-expanded': String(open) },
       h('span', { class: 'dot', style: 'background:#fffbea' }), h('span', { class: 'grow' }, 'Cities', h('small', { class: 'lb-target', title: 'Checked on resupply turns' }, ` · win at ${G.majorityTarget(s)}`)), open ? '▾' : '▸'),
     open ? h('div', { class: 'lb-cols' }, h('span', { class: 'grow' }), h('span', { class: 'lb-num' }, 'cities'), h('span', { class: 'lb-num lb-troops' }, 'troops')) : null,

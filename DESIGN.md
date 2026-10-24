@@ -61,7 +61,7 @@ When you join you create a nation:
 colour and victory theme). The name is fixed once the game starts.
 
 You can also secretly tag every other nation as **friend**, **neutral** or **enemy**. Only you see
-your tags, and the map can be tinted by them.
+your tags (on the Nations page).
 
 ## The map
 
@@ -83,7 +83,6 @@ The world is a generated **continent with islands around it**, split into **terr
   support into them. They form small ranges in neutral land and never cut the map in two. About 1 in
   12 territories is mountains, on top of the neutral land.
 - Territories are named like a grid, in reading order from the top-left: **a1, b1 … z1, a2, b2 …**
-  (names can be hidden with the names button).
 - You start with **one troop on each of your home cities**.
 
 A territory belongs to whoever's troop last **ended a turn** in it. It stays yours when you leave,
@@ -481,7 +480,9 @@ introduces the browsers to each other; no game data is stored anywhere but the h
   to continue.
 - **Admin tools** (resolve now, settle bot duels, finish build phase, end game, restart, undo) are
   host-only.
-- **Deploy:** any static host. Currently GitHub Pages (`tools/build.mjs` writes a slim `dist/`).
+- **Deploy:** GitHub Pages at https://jacobmandelbrot.github.io/openduel/ (repo `JacobMandelbrot/openduel`,
+  which holds only the built site). `node tools/deploy.mjs "what changed"` runs the tests, rebuilds `dist/`
+  (`tools/build.mjs` copies only the files the site uses) and pushes it.
 
 ### Assets and credits
 

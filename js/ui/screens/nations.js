@@ -46,7 +46,7 @@ export function render(app) {
     h('div', { class: 'ribbon teal' }, s.phase === 'ended' ? 'Final standings' : 'Nations'),
     h('div', { class: 'panel paper small' },
       h('div', { class: 'row' }, emoji('speech-balloon'), h('div', { class: 'grow' },
-        'Alliances are made by talking, face to face. Your friend / neutral / enemy tags are private — only you see them, and you can tint the map by them.'))),
+        'Alliances are made by talking, face to face. Your friend / neutral / enemy tags are private — only you see them.'))),
     h('div', { class: 'row' }, h('div', { class: 'grow' }), btn('Edit my nation', { color: 'yellow', sm: true, icon: 'pencil', onclick: () => app.go('me') })),
     h('div', { class: 'list' }, rows)));
 }
