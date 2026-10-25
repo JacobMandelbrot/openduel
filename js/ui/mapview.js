@@ -116,7 +116,7 @@ export class MapView {
     this.svg.append(s('path', { d: this.geom.coast, class: 'coast' }));
     this.gHl = s('g');
     this.gIcons = s('g', { 'pointer-events': 'none' });
-    this.gArrows = s('g');
+    this.gArrows = s('g', { 'pointer-events': 'none' });
     this.svg.append(this.gHl, this.gIcons, this.gArrows);
   }
 
@@ -346,6 +346,14 @@ export class MapView {
     this.setView({ x: x - w / 2, y: y - h / 2, w, h });
   }
 
+  /** The territory under a tap. Falls back to whatever cell is under the point, in case a line or label caught it. */
+  territoryAt(target, x, y) {
+    const own = target?.getAttribute?.('data-t');
+    if (own != null) return Number(own);
+    const cell = document.elementsFromPoint(x, y).find((el) => el.hasAttribute?.('data-t') && this.svg.contains(el));
+    return cell ? Number(cell.getAttribute('data-t')) : null;
+  }
+
   bindGestures() {
     const pts = new Map();
     let start = null, pinch = null, moved = false;
@@ -389,8 +397,7 @@ export class MapView {
       pts.delete(e.pointerId);
       if (pts.size === 0) {
         if (start && !moved && e.type === 'pointerup') {
-          const tid = start.target?.getAttribute?.('data-t');
-          this.onTap?.(tid != null ? Number(tid) : null);
+          this.onTap?.(this.territoryAt(start.target, e.clientX, e.clientY));
         }
         start = null; pinch = null;
       } else if (pts.size === 1) {

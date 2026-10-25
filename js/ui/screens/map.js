@@ -376,6 +376,8 @@ function onTap(app, tid) {
 
   if (s.phase === 'orders' && ui.mode === 'move') {
     const tr = s.troops.find((x) => x.id === ui.troop);
+    // A near miss keeps you choosing; tapping the troop itself (or the sea) cancels.
+    if (tr && tid !== tr.at && !T(s, tr.at).neighbors.includes(tid)) { toast('Tap a territory with a dashed outline'); return; }
     ui = { mode: 'idle', troop: null, selected: null, bubble: null };
     if (tr && T(s, tr.at).neighbors.includes(tid)) {
       app.act('setOrder', tr.id, { type: 'move', to: tid });
@@ -385,8 +387,9 @@ function onTap(app, tid) {
   }
   if (s.phase === 'orders' && ui.mode === 'support') {
     const tr = s.troops.find((x) => x.id === ui.troop);
+    if (tr && tid !== tr.at && !T(s, tr.at).neighbors.includes(tid)) { toast('Tap a territory with a dashed outline'); return; }
     ui = { mode: 'idle', troop: null, selected: null, bubble: null };
-    if (tr && T(s, tr.at).neighbors.includes(tid)) ui = { mode: 'idle', troop: null, selected: tid, bubble: { tid, kind: 'support', supporter: tr.id } };
+    if (tr && T(s, tr.at).neighbors.includes(tid)) ui ={ mode: 'idle', troop: null, selected: tid, bubble: { tid, kind: 'support', supporter: tr.id } };
     update(app);
     return;
   }

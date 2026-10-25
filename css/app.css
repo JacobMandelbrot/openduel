@@ -170,6 +170,8 @@ main { position: relative; overflow: hidden; min-height: 0; }
 .mapwrap .terr { cursor: pointer; }
 .mapwrap .cell { stroke: none; }
 .mapwrap .border { stroke: rgba(120, 70, 50, .55); stroke-width: 1.1; fill: none; stroke-linecap: round; }
+/* Lines drawn over the land must never catch a tap meant for the territory under them. */
+.mapwrap .border, .mapwrap .nborder, .mapwrap .coast { pointer-events: none; }
 .mapwrap .nborder { stroke: var(--outline); stroke-width: 2.4; fill: none; stroke-linecap: round; }
 .mapwrap .route-under { stroke: rgba(40, 80, 90, .35); stroke-width: 5; fill: none; stroke-linecap: round; }
 .mapwrap .route { stroke: #ffffff; stroke-width: 2.6; fill: none; stroke-linecap: round; stroke-dasharray: 6 4; }
