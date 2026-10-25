@@ -358,8 +358,13 @@ export class MapView {
     const pts = new Map();
     let start = null, pinch = null, moved = false;
     const el = this.wrap;
+    // Fingers wobble while tapping (a lot on Android), so touch needs more slack than a mouse before it counts as a drag.
+    let slop = 6;
     el.addEventListener('pointerdown', (e) => {
       try { el.setPointerCapture?.(e.pointerId); } catch { /* pointer already gone; gestures still work without capture */ }
+      // A new gesture: forget fingers whose lift we never heard about, or every later tap would look like a pinch.
+      if (e.isPrimary) { pts.clear(); pinch = null; }
+      slop = e.pointerType === 'mouse' ? 6 : 14;
       pts.set(e.pointerId, { x: e.clientX, y: e.clientY });
       if (pts.size === 1) {
         start = { x: e.clientX, y: e.clientY, view: { ...this.view }, t: performance.now(), target: e.target };
@@ -387,7 +392,7 @@ export class MapView {
       }
       if (!start) return;
       const dx = e.clientX - start.x, dy = e.clientY - start.y;
-      if (Math.abs(dx) + Math.abs(dy) > 6) moved = true;
+      if (Math.hypot(dx, dy) > slop) moved = true;
       if (!moved) return;
       const scale = start.view.w / rect.width;
       this.setView({ ...start.view, x: start.view.x - dx * scale, y: start.view.y - dy * scale });
@@ -397,7 +402,7 @@ export class MapView {
       pts.delete(e.pointerId);
       if (pts.size === 0) {
         if (start && !moved && e.type === 'pointerup') {
-          this.onTap?.(this.territoryAt(start.target, e.clientX, e.clientY));
+          this.onTap?.(this.territoryAt(start.target, start.x, start.y));
         }
         start = null; pinch = null;
       } else if (pts.size === 1) {
